@@ -1,0 +1,45 @@
+diff --git a/source/base/image/metadata.cpp b/source/base/image/metadata.cpp
+index dbef9a30..87ce73ca 100644
+--- a/source/base/image/metadata.cpp
++++ b/source/base/image/metadata.cpp
+@@ -53,7 +53,11 @@ namespace pov_base
+ 
+ Metadata::Metadata()
+ {
+-    mTimestamp = boost::posix_time::second_clock::universal_time();
++    // POVRAY_WASM_STRIP_FRONTEND: wasmi clock_time_get is stubbed to 0. Rather than calling
++    // second_clock::universal_time() (drags in more Boost date_time
++    // machinery to read that same 0), construct from time_t(0) directly.
++    // Gives 1970-01-01T00:00:00 in the PNG metadata "Render Date" field.
++    mTimestamp = boost::posix_time::from_time_t(0);
+ }
+ 
+ Metadata::~Metadata()
+diff --git a/source/parser/parser_strings.cpp b/source/parser/parser_strings.cpp
+index e867e85c..faf5ecb8 100644
+--- a/source/parser/parser_strings.cpp
++++ b/source/parser/parser_strings.cpp
+@@ -46,7 +46,7 @@
+ //  (none at the moment)
+ 
+ // Boost header files
+-#include <boost/date_time/posix_time/posix_time.hpp>
++#include <ctime> // POVRAY_WASM_STRIP_FRONTEND: stdlib replaces boost::posix_time
+ 
+ // POV-Ray header files (base module)
+ #include "base/pov_mem.h"
+@@ -453,7 +453,13 @@ UCS2 *Parser::Parse_Datetime(bool pathname)
+     // if it's called, they can.
+     /* try */
+     {
+-        std::tm t = boost::posix_time::to_tm(boost::posix_time::from_time_t(timestamp));
++        // POVRAY_WASM_STRIP_FRONTEND: replace boost::posix_time with stdlib gmtime_r.
++        std::tm t;
++        {
++            std::time_t tt = static_cast<std::time_t>(timestamp);
++            std::tm *r = gmtime_r(&tt, &t);
++            if (r == nullptr) t = std::tm{}; // best-effort on out-of-range
++        }
+         // TODO FIXME - we should either have this locale setting globally, or avoid it completely; in either case it shouldn't be *here*.
+         setlocale(LC_TIME,""); // Get the local preferred format
+         vlen = strftime(val, PARSE_NOW_VAL_LENGTH, FormatStr, &t);

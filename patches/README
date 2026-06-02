@@ -1,0 +1,86 @@
+Patches in this directory are applied by the Makefile's PREBUILD
+stage, after unix/prebuild.sh generates ./configure. Each *.patch.sh
+file is a thin wrapper that runs `git apply` on the matching *.patch
+unified diff; the wrapper is idempotent (skips if the diff
+reverse-applies cleanly).
+
+  0001-emscripten-source-fixes.{patch.sh,patch}
+    Source-level fixes for building POV-Ray under emscripten:
+      - unix/povconfig/syspovconfig.h: add __EMSCRIPTEN__ branch
+        (otherwise POV-Ray errors out with "Unix flavor not identified")
+      - source/base/configbase.h: specialize std::char_traits<unsigned short>
+        (libc++ only specializes for char/wchar_t/char16_t/char32_t/char8_t;
+        POV-Ray's UCS2String = basic_string<unsigned short>)
+      - source/core/render/trace.cpp: std::auto_ptr -> std::unique_ptr
+        (auto_ptr was removed in C++17)
+      - vfe/vfesession.{h,cpp}: split WorkerThread() into
+        Initialize() + RunIterationBody() + FinishWorkerThread()
+        so a single-threaded caller can drive the message pump
+      - source/backend/povray.{cpp,h}: split MainThreadFunction
+        similarly; heap-allocate RenderBackend to survive early-return;
+        expose PumpMainThread() for the plugin to drive backend messages
+      - source/parser/parser_tokenizer.cpp: in-memory scene input
+      - vfe/vfe.cpp: OpenLocalFile sentinel routing for PNG capture
+      - source/base/image/image.cpp: PNG-only Image::Read/Write
+      - throw / try / catch -> (void)0 across 74+ files (no EH runtime)
+
+  0002-strip-truetype-and-image-parse.{patch.sh,patch}
+    Strip features the WASM build can't use (no filesystem at runtime):
+      - parser.cpp: stub Parse_TrueType, neutralize the TrueType*
+        dynamic_cast that keeps truetype.o's typeinfo referenced
+      - parser_materials.cpp: short-circuit Parse_Image so image_map /
+        bump_map / material_map / height_field "file.png" fail-fast
+        and LTO can drop Read_Image / Image::Read
+      - fileutil.cpp: stub the internal-font lookup (orphans the four
+        built-in font blobs ~88 KB)
+      - scenedata.cpp: replace the always-empty TTFonts delete loop
+        with .clear(), so truetype.o stays out of the link closure
+
+  0003-strip-frontend-features.{patch.sh,patch}
+    Smaller stripping that doesn't touch the vfe.cpp frontend loop:
+      - source/base/image/metadata.cpp: drop boost::posix_time, emit
+        a zero PNG timestamp instead. Saves the inline template
+        instantiation (libboost_date_time itself is otherwise empty).
+
+  0004-configure-cross-compile-fixes.patch.sh  (perl regex, no .patch)
+    Autoconf-generated-configure patches. Fixes two classes of macro
+    bugs triggered under --host=wasm32-unknown-emscripten:
+      - ax_check_lib cross-compile branch fails to set ax_check_lib="ok"
+        (libpng / libz / boost version checks)
+      - boost_thread usability loop's `# FIXME` cross-compile branch
+        fails to set boost_thread_links=1
+    Targets the generated configure script, so it must be applied
+    AFTER unix/prebuild.sh has run. Stays as a perl regex script (not
+    a unified diff) because configure's exact byte content depends on
+    the host's autoconf version — a static diff drifts between distros,
+    while the message-string regexes are stable.
+
+  scripts/strip-pthread.sh (separate, invoked from Makefile post-configure)
+    Strips -pthread / -lpthread from config.status (handling autoconf's
+    line-continued strings) and regenerates every Makefile. Without this
+    clang emits ~125 atomic.rmw.* ops that wasmi rejects at load.
+
+Regenerate any *.patch after editing POV-Ray source:
+
+  cd povray-src
+  git reset --hard && git clean -fdxq
+  bash ../patches/0001-emscripten-source-fixes.patch.sh .
+  git add -A
+  bash ../patches/0002-strip-truetype-and-image-parse.patch.sh .
+  git diff > ../patches/0002-strip-truetype-and-image-parse.patch
+  # ... same for 0003 (0004 has no .patch — see above)
+
+Not yet written (runtime work, not build-system work):
+
+  virtual-fs
+    Hook POV-Ray's file-read path so #include "colors.inc" is served
+    from an in-memory map shipped with the plugin data section.
+
+  vfe-buffer-output
+    Extend vfeSession to capture PNG output into a std::vector<uint8_t>
+    instead of writing to a FILE*.
+
+  tile-pool-drive
+    Each render spawns a per-tile worker pool; needs the same
+    Init/RunOnce/Finish split patches/0001 applied to vfeSession +
+    MainThreadFunction.

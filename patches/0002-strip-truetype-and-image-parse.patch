@@ -1,0 +1,500 @@
+diff --git a/source/base/fileutil.cpp b/source/base/fileutil.cpp
+index 55f7ef66..85b34a1e 100644
+--- a/source/base/fileutil.cpp
++++ b/source/base/fileutil.cpp
+@@ -230,15 +230,10 @@ int InferFileTypeFromExt(const UCS2String& ext)
+  *
+  * To add a font, check first its license
+  */
+-IStream *Internal_Font_File(int font_id)
++IStream *Internal_Font_File(int /*font_id*/)
+ {
+-    switch(font_id)
+-    {
+-        case 1:     return new IMemStream(&font_timrom[0],   sizeof(font_timrom),   "timrom.ttf");
+-        case 2:     return new IMemStream(&font_cyrvetic[0], sizeof(font_cyrvetic), "cyrvetic.ttf");
+-        case 3:     return new IMemStream(&font_crystal[0],  sizeof(font_crystal),  "crystal.ttf");
+-        default:    return new IMemStream(&font_povlogo[0],  sizeof(font_povlogo),  "povlogo.ttf");
+-    }
++    // POVRAY_WASM_STRIP_FEATURES: built-in font blobs are not linked.
++    return nullptr;
+ }
+ 
+ //******************************************************************************
+diff --git a/source/core/scene/scenedata.cpp b/source/core/scene/scenedata.cpp
+index 13ae568c..81d3a533 100644
+--- a/source/core/scene/scenedata.cpp
++++ b/source/core/scene/scenedata.cpp
+@@ -126,8 +126,11 @@ SceneData::~SceneData()
+     }
+     if (boundingSlabs != nullptr)
+         Destroy_BBox_Tree(boundingSlabs);
+-    for (std::vector<TrueTypeFont*>::iterator i = TTFonts.begin(); i != TTFonts.end(); ++i)
+-        delete *i;
++    // POVRAY_WASM_STRIP_FEATURES: TTFonts is always empty (Parse_TrueType errors before
++    // push_back), and the delete loop was the only reference to
++    // TrueTypeFont::~TrueTypeFont() — neutralizing it lets truetype.o
++    // leave the link closure entirely.
++    TTFonts.clear();
+     // TODO: perhaps ObjectBase::~ObjectBase would be a better place
+     //       to handle cleanup of individual objects ?
+     Destroy_Object(objects);
+diff --git a/source/parser/parser.cpp b/source/parser/parser.cpp
+index 774071f3..6e8af90a 100644
+--- a/source/parser/parser.cpp
++++ b/source/parser/parser.cpp
+@@ -5978,119 +5978,9 @@ ObjectPtr Parser::Parse_Triangle()
+ 
+ ObjectPtr Parser::Parse_TrueType ()
+ {
+-    ObjectPtr Object;
+-    char *filename = nullptr;
+-    UCS2 *text_string;
+-    DBL depth;
+-    Vector3d offset;
+-    int builtin_font = 0;
+-    TRANSFORM Local_Trans;
+-    POV_UINT32 cmap;
+-    CharsetID charset;
+-    LegacyCharset legacyCharset;
+-
+-#if 0
+-    if((sceneData->EffectiveLanguageVersion() < 350) && ((sceneData->legacyCharset == LegacyCharset::kUnspecified) ||
+-                                                         (sceneData->legacyCharset == LegacyCharset::kASCII)))
+-    {
+-        PossibleError("Text may not be displayed as expected.\n"
+-                      "Please refer to the user manual regarding changes\n"
+-                      "in POV-Ray v3.5 and later.");
+-    }
+-#endif
+-
+-    if (sceneData->EffectiveLanguageVersion() < 380)
+-    {
+-        if (sceneData->legacyCharset == LegacyCharset::kUnspecified)
+-            legacyCharset = LegacyCharset::kASCII;
+-        else
+-            legacyCharset = sceneData->legacyCharset;
+-
+-        PossibleError("Text may not be displayed as expected.\n"
+-                      "Please refer to the user manual regarding changes "
+-                      "in POV-Ray v3.8 and later.");
+-    }
+-    else
+-        legacyCharset = LegacyCharset::kUnspecified;
+-
+-    Parse_Begin ();
+-
+-    Object = reinterpret_cast<ObjectPtr>(Parse_Object_Id());
+-    if (Object != nullptr)
+-        return (reinterpret_cast<ObjectPtr>(Object));
+-
+-    EXPECT_ONE
+-        CASE(TTF_TOKEN)
+-            filename = Parse_C_String(true);
+-        END_CASE
+-        CASE(INTERNAL_TOKEN)
+-            builtin_font = (int)Parse_Float();
+-        END_CASE
+-        OTHERWISE
+-            Expectation_Error ("ttf or internal");
+-        END_CASE
+-    END_EXPECT
+-
+-    cmap = TrueTypeFont::kAnyCMAP;
+-    charset = CharsetID::kUndefined;
+-    if (AllowToken(CMAP_TOKEN))
+-    {
+-        Warning("Text primitive 'cmap' extension is experimental and may be "
+-                "subject to future changes.");
+-        Parse_Begin();
+-        cmap =  POV_UINT16(Parse_Float()) << 16;
+-        Parse_Comma();
+-        cmap += POV_UINT16(Parse_Float());
+-        charset = CharsetID::kUCS4;
+-        if (AllowToken(CHARSET_TOKEN))
+-        {
+-            charset = CharsetID(POV_UINT16(Parse_Float()));
+-            if (Charset::Get(charset) == nullptr)
+-                Error("Unknown character set %i", int(charset));
+-        }
+-        Parse_End();
+-    }
+-
+-    /*** Object = Create_TTF(); */
+-    Parse_Comma();
+-
+-    /* Parse the text string to be rendered */
+-    text_string = Parse_String();
+-    Parse_Comma();
+-
+-    /* Get the extrusion depth */
+-    depth = Parse_Float(); Parse_Comma ();
+-
+-    /* Get the offset vector */
+-    Parse_Vector(offset);
+-
+-    /* Open the font file */
+-    TrueTypeFont* font = OpenFontFile(filename, builtin_font, cmap, charset, legacyCharset);
+-
+-    /* Process all this good info */
+-    Object = new CSGUnion();
+-    TrueType::ProcessNewTTF(reinterpret_cast<CSG *>(Object), font, text_string, depth, offset);
+-    if (filename)
+-    {
+-        /* Free up the filename  */
+-        POV_FREE (filename);
+-    }
+-
+-    /* Free up the text string memory */
+-    POV_FREE (text_string);
+-
+-    /**** Compute_TTF_BBox(Object); */
+-    Object->Compute_BBox();
+-
+-    /* This tiny rotation should fix cracks in text that lies along an axis */
+-    offset = Vector3d(0.001, 0.001, 0.001); // TODO - try to find a different solution to this hack
+-    Compute_Rotation_Transform(&Local_Trans, offset);
+-    Rotate_Object (reinterpret_cast<ObjectPtr>(Object), offset, &Local_Trans);
+-
+-    /* Get any rotate/translate or texturing stuff */
+-    Object = Parse_Object_Mods (reinterpret_cast<ObjectPtr>(Object));
+-
+-    return (reinterpret_cast<ObjectPtr>(Object));
++    // POVRAY_WASM_STRIP_FEATURES: text {} disabled (no filesystem in WASM).
++    Error("text {} objects are not available in the povrayst WASM build.");
++    return nullptr;
+ }
+ 
+ 
+@@ -9267,7 +9157,7 @@ void Parser::Link_To_Frame(ObjectPtr Object)
+             (dynamic_cast<CSGIntersection *>(Object) == nullptr) && // FIXME
+             (dynamic_cast<CSGMerge *>(Object) == nullptr)        && // FIXME
+             (dynamic_cast<Poly *>(Object) == nullptr)            && // FIXME
+-            (dynamic_cast<TrueType *>(Object) == nullptr)        && // FIXME
++            (((void*)Object == (void*)nullptr) || true)            && // POVRAY_WASM_STRIP_FEATURES
+             ((dynamic_cast<Quadric *>(Object) == nullptr) || (dynamic_cast<Quadric *>(Object)->Automatic_Bounds)))
+         {
+             /* Destroy only, if bounding object is not used as clipping object. */
+diff --git a/source/parser/parser_materials.cpp b/source/parser/parser_materials.cpp
+index 207acf1f..3f7b7f8b 100644
+--- a/source/parser/parser_materials.cpp
++++ b/source/parser/parser_materials.cpp
+@@ -210,311 +210,13 @@ void Parser::Make_Pattern_Image(ImageData *image, FUNCTION_PTR fn, int token)
+ 
+ ImageData *Parser::Parse_Image(int Legal, bool GammaCorrect)
+ {
+-    ImageData *image = nullptr;
+-    Vector3d Local_Vector;
+-    char *Name = nullptr;
+-    TokenId token_id;
+-    int filetype = NO_FILE;
+-    UCS2String ign;
+-    FUNCTION_PTR fnPtr;
+-
+-    image = Create_Image();
+-
+-    if(Legal & GRAD_FILE)
+-    {
+-        EXPECT_CAT
+-            CASE_VECTOR_UNGET
+-                VersionWarning(150, "Old style orientation vector or map type not supported. Ignoring value.");
+-                Parse_Vector(Local_Vector);
+-            END_CASE
+-
+-            OTHERWISE
+-                UNGET
+-                EXIT
+-            END_CASE
+-        END_EXPECT
+-    }
+-
+-    EXPECT_ONE
+-        CASE (FUNCTION_TOKEN)
+-            image->width = (SNGL)int(Parse_Float() + 0.5);
+-            Parse_Comma();
+-            image->height = (SNGL)int(Parse_Float() + 0.5);
+-
+-            Get_Token();
+-            if (CurrentTrueTokenId() != LEFT_CURLY_TOKEN)
+-                Found_Instead_Error("Missing { after", "expression");
+-            Unget_Token();
+-
+-            fnPtr = Parse_DeclareFunction(&token_id, nullptr, false);
+-            Make_Pattern_Image(image, fnPtr, token_id);
+-        END_CASE
+-
+-        CASE (IFF_TOKEN)
+-            filetype = IFF_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (GIF_TOKEN)
+-            filetype = GIF_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (POT_TOKEN)
+-            filetype = POT_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (SYS_TOKEN)
+-            filetype = SYS_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (TGA_TOKEN)
+-            filetype = TGA_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (PNG_TOKEN)
+-            filetype = PNG_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (PGM_TOKEN)
+-            filetype = PGM_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (PPM_TOKEN)
+-            filetype = PPM_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (JPEG_TOKEN)
+-            filetype = JPEG_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (TIFF_TOKEN)
+-            mExperimentalFlags.tiff = true;
+-            filetype = TIFF_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (BMP_TOKEN)
+-            filetype = BMP_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (EXR_TOKEN)
+-            filetype = EXR_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE (HDR_TOKEN)
+-            filetype = HDR_FILE;
+-            Name = Parse_C_String(true);
+-        END_CASE
+-
+-        CASE5 (STRING_LITERAL_TOKEN,CHR_TOKEN,SUBSTR_TOKEN,STR_TOKEN,VSTR_TOKEN)
+-        CASE5 (CONCAT_TOKEN,STRUPR_TOKEN,STRLWR_TOKEN,DATETIME_TOKEN,STRING_ID_TOKEN)
+-            {
+-                UNGET
+-                Name = Parse_C_String(true);
+-                UCS2String filename = SysToUCS2String(Name);
+-                UCS2String ext = GetFileExtension(Path(filename));
+-
+-                if (ext.empty() == false)
+-                {
+-                    filetype = gFile_Type_To_Mask [InferFileTypeFromExt(ext)];
+-                    if (filetype == NO_FILE)
+-                    {
+-                        POV_FREE(Name);
+-                        Error("Could not determine valid image file type from extension.");
+-                    }
+-                }
+-                else
+-                {
+-                    switch (sceneData->defaultFileType)
+-                    {
+-                        case kPOVList_FileType_Targa:
+-                        case kPOVList_FileType_CompressedTarga:
+-                            filetype = TGA_FILE;
+-                            break;
+-                        case kPOVList_FileType_PNG:
+-                            filetype = PNG_FILE;
+-                            break;
+-                        case kPOVList_FileType_JPEG:
+-                            filetype = JPEG_FILE;
+-                            break;
+-                        case kPOVList_FileType_PPM:
+-                            filetype = PPM_FILE;
+-                            break;
+-                        case kPOVList_FileType_BMP:
+-                            filetype = BMP_FILE;
+-                            break;
+-                        case kPOVList_FileType_OpenEXR:
+-                            filetype = EXR_FILE;
+-                            break;
+-                        case kPOVList_FileType_RadianceHDR:
+-                            filetype = HDR_FILE;
+-                            break;
+-                        case kPOVList_FileType_System:
+-                            filetype = SYS_FILE;
+-                            break;
+-                        default:
+-                            POV_FREE(Name);
+-                            Error("Could not determine valid input file type from output type.");
+-                    }
+-                }
+-            }
+-        END_CASE
+-
+-        OTHERWISE
+-            Expectation_Error("map file spec");
+-        END_CASE
+-    END_EXPECT
+-
+-    if (Name != nullptr)
+-    {
+-        if(!(filetype & Legal))
+-            Error("File type not supported here.");
+-
+-        UCS2String filename = SysToUCS2String(Name);
+-        ImageReadOptions options;
+-
+-        switch (sceneData->gammaMode)
+-        {
+-            case kPOVList_GammaMode_None:
+-                options.gammacorrect = false;
+-                options.defaultGamma.reset();
+-                options.workingGamma.reset();
+-                break;
+-            case kPOVList_GammaMode_AssumedGamma36:
+-                if (GammaCorrect)
+-                {
+-                    options.gammacorrect = GammaCorrect;
+-                    options.defaultGamma = SimpleGammaCurvePtr(sceneData->workingGamma);
+-                    options.workingGamma = SimpleGammaCurvePtr(sceneData->workingGamma);
+-                }
+-                else
+-                {
+-                    options.gammacorrect = false;
+-                    options.defaultGamma.reset();
+-                    options.workingGamma.reset();
+-                }
+-                break;
+-            case kPOVList_GammaMode_AssumedGamma37:
+-            case kPOVList_GammaMode_AssumedGamma37Implied:
+-                if (GammaCorrect)
+-                {
+-                    options.gammacorrect = GammaCorrect;
+-                    options.defaultGamma.reset();
+-                    options.workingGamma = SimpleGammaCurvePtr(sceneData->workingGamma);
+-                }
+-                else
+-                {
+-                    options.gammacorrect = false;
+-                    options.defaultGamma.reset();
+-                    options.workingGamma.reset();
+-                }
+-                break;
+-            default:
+-                (void)0; /* WASM_THROW_STRIPPED */
+-        }
+-
+-        EXPECT
+-            CASE (GAMMA_TOKEN)
+-                // User wants to override decoding gamma for this particular file; let them have their will.
+-                options.gammacorrect = true;
+-                options.gammaOverride = true;
+-                options.defaultGamma = Parse_Gamma();
+-                if (GammaCorrect)
+-                    options.workingGamma = SimpleGammaCurvePtr(sceneData->workingGamma);
+-                else
+-                    options.workingGamma.reset();
+-            END_CASE
+-            CASE (PREMULTIPLIED_TOKEN)
+-                // User wants to override alpha premultiplication setting for this particular file; let them have their will.
+-                options.premultipliedOverride = true;
+-                options.premultiplied = ((int)Parse_Float() != 0);
+-            END_CASE
+-            OTHERWISE
+-                UNGET
+-                EXIT
+-            END_CASE
+-        END_EXPECT
+-
+-        if (options.gammacorrect && !options.gammaOverride && (filetype == PNG_FILE) && (sceneData->EffectiveLanguageVersion() < 370))
+-        {
+-            PossibleError("PNG input image default gamma handling has changed for pre POV-Ray v3.7 scenes;\n"
+-                          "results may differ from original intention. See the documentation for more\n"
+-                          "details.");
+-        }
+-
+-        if (GammaCorrect && !options.gammaOverride && ((filetype == PGM_FILE) || (filetype == PPM_FILE)))
+-        {
+-            // As of POV-Ray v3.8, our default gamma handling for Netpbm (PGM/PPM) input images adheres to the
+-            // official standard, which mandates data to be gamma-encoded using the ITU-R BT.709 transfer function.
+-
+-            if (sceneData->EffectiveLanguageVersion() < 380)
+-            {
+-                // For legacy scenes we simulate the old behaviour, which was to perform no gamma correction at all.
+-                options.gammacorrect = false;
+-            }
+-            else
+-            {
+-                Warning("Input image gamma not specified for Netpbm (PGM/PPM) file; POV-Ray will default to the\n"
+-                        "official standard, but competing de-facto standards exist. To get rid of this warning,\n"
+-                        "explicitly specify \"gamma bt709\". If the results do not match your expectations, try\n"
+-                        "\"gamma srgb\" or \"gamma 1.0\".");
+-            }
+-        }
+-
+-        if (!GammaCorrect)
+-        {
+-            // context typically implies that gamma correction is not desired (e.g. height_field)
+-            if (options.gammacorrect && !options.gammaOverride)
+-                Warning("Input image gamma not specified for height_field, bump_map or image_pattern;\n"
+-                        "no gamma adjustment performed on input image; results may differ from intention\n"
+-                        "in rare cases. See the documentation for details.\n"
+-                        "To get rid of this warning, explicitly specify \"gamma 1.0\".");
+-        }
+-
+-        // beta-test feature
+-        // if we end up keeping vidcap, it will probably get its own filetype.
+-        // for now, avoid the need to change the SDL by using the sys file type with the below prefix
+-        if (filetype == SYS_FILE && strncmp(Name, ":vidcap:", 8) == 0)
+-        {
+-#ifdef POV_VIDCAP_IMPL
+-            image->VidCap = new POV_VIDCAP_IMPL();
+-            // note the second ':' gets passed since it's the option prefix
+-            // e.g. ":vidcap:source=/dev/video0:w=640:h=480:fps=5"
+-            image->data = image->VidCap->Init(Name + 7, options, true);
+-            mBetaFeatureFlags.videoCapture = true;
+-#else
+-            Error("Beta-test video capture feature not implemented on this platform.");
+-#endif
+-        }
+-        else
+-            image->data = Read_Image(filetype, filename.c_str(), options);
+-
+-        if (!options.warnings.empty())
+-            for (vector<std::string>::iterator it = options.warnings.begin(); it != options.warnings.end(); it++)
+-                Warning("%s: %s", Name, it->c_str());
+-
+-        POV_FREE(Name);
+-    }
+-
+-    if (image->data == nullptr)
+-        Error("Cannot read image.");
+-
+-    image->iwidth = image->data->GetWidth();
+-    image->iheight = image->data->GetHeight();
+-    image->width = (SNGL) image->iwidth;
+-    image->height = (SNGL) image->iheight;
+-
+-    return image;
++    (void)Legal; (void)GammaCorrect;
++    // POVRAY_WASM_STRIP_FEATURES: image file reading disabled.
++    // Affects image_map, bump_map, material_map, height_field from file.
++    Error("image_map / bump_map / material_map / height_field file input is not\n"
++          "available in the povrayst WASM build (no filesystem at runtime).\n"
++          "Use procedural patterns (function, marble, granite, ...) instead.");
++    return nullptr;
+ }
+ 
+ 

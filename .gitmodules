@@ -1,0 +1,3 @@
+[submodule "povray-src"]
+	path = povray-src
+	url = https://github.com/POV-Ray/povray.git

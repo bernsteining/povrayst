@@ -1,0 +1,4 @@
+# Dockerfile only needs the host toolchain; everything else is mounted at
+# runtime. Keep the build context tiny.
+*
+!Dockerfile

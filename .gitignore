@@ -1,0 +1,21 @@
+# Build artifacts
+build/
+install/
+
+# Generated WASM binary (rebuild with `make wasm`)
+pkg/povray.wasm
+
+# Harness build
+harness/target/
+
+# Generated PDFs (rebuild with `typst compile`)
+test/*.pdf
+test/debug.*
+
+# Pre-rendered example PNGs (rebuild via harness)
+test/examples/renders/
+
+# Editor / OS
+*.swp
+*~
+.DS_Store
