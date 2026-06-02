@@ -280,3 +280,17 @@
   }
   render(scene, ..args)
 }
+
+/// Enable POV-Ray syntax highlighting for `povray` raw blocks.
+///
+/// Apply as a show rule once at the top of your document:
+///
+///   #import "@preview/povrayst:0.1.0": pov, render, highlight
+///   #show: highlight
+///
+/// The syntax file shipped inside the package is loaded automatically —
+/// no path to manage on the caller's side.
+#let highlight(body) = {
+  set raw(syntaxes: "povray.sublime-syntax")
+  body
+}

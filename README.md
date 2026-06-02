@@ -35,6 +35,22 @@ sphere { 0, 1 pigment { rgb <1, 0.4, 0.15> } }
 quality, antialiasing, gamma, tracing depth, partial-render section,
 includes, ...). 
 
+### Syntax highlighting
+
+The package ships [`povray.sublime-syntax`](pkg/povray.sublime-syntax)
+covering the full POV-Ray SDL, exposed through the `highlight` show
+rule. Apply it once at the top of your document:
+
+```typst
+#import "@preview/povrayst:0.1.0": pov, render, highlight
+#show: highlight
+#show raw.where(lang: "povray"): pov
+```
+
+After this, every fenced ` ```povray ``` ` block in the document
+(including the ones rendered via the `pov` show rule above) is
+highlighted by Typst's `syntect` integration — no extra file to copy.
+
 ## Config reference
 
 Every keyword argument to `render()` / `pov()`, its default, and the
