@@ -11,6 +11,8 @@ harness/target/
 # Generated PDFs (rebuild with `typst compile`)
 test/*.pdf
 test/debug.*
+# …except the gallery PDF, which we ship for the README raw link.
+!test/documentation.pdf
 
 # Pre-rendered example PNGs (rebuild via harness)
 test/examples/renders/
