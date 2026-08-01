@@ -252,8 +252,13 @@
     compression: compression,
   ), extra)
   let expanded-scene = expand-includes(scene, includes)
-  let png = _plugin.render(bytes(expanded-scene), bytes(opts))
-  image(png, format: "png")
+  let out = _plugin.render(bytes(expanded-scene), bytes(opts))
+  // The plugin returns a raw RGBA8 blob: [w u32 LE][h u32 LE][rgba8…].
+  // Embedding the pixels directly skips a PNG encode in the plugin and a PNG
+  // decode in Typst (which re-compresses for the PDF anyway).
+  let w = out.at(0) + out.at(1) * 256 + out.at(2) * 65536 + out.at(3) * 16777216
+  let h = out.at(4) + out.at(5) * 256 + out.at(6) * 65536 + out.at(7) * 16777216
+  image(out.slice(8), format: (encoding: "rgba8", width: w, height: h))
 }
 
 /// Render an inline POV-Ray scene without string quoting.

@@ -1,0 +1,67 @@
+--- a/source/base/image/image.cpp
++++ b/source/base/image/image.cpp
+@@ -50,6 +50,7 @@
+ 
+ // POV-Ray header files (base module)
+ #include "base/filesystem.h"
++#include "base/fileinputoutput.h" // OStream — POVRAY_WASM raw-RGBA Write path writes to it
+ #include "base/platformbase.h"
+ #include "base/povassert.h"
+ #include "base/safemath.h"
+@@ -3886,8 +3887,9 @@
+ Image *Image::Read(ImageFileType type, IStream *file, const ImageReadOptions& options)
+ {
+ #ifdef POVRAY_WASM
+-    // POVRAY_WASM_IMAGE_PNG_ONLY: only PNG input is supported.
+-    if (type == PNG) return Png::Read(file, options);
++    // POVRAY_WASM: image input is unsupported (Parse_Image is stripped), so there
++    // is no PNG decode and hence no libpng dependency.
++    (void)type; (void)file; (void)options;
+     return nullptr;
+ #else
+ 
+@@ -3968,8 +3970,42 @@
+ void Image::Write(ImageFileType type, OStream *file, const Image *image, const ImageWriteOptions& options)
+ {
+ #ifdef POVRAY_WASM
+-    // POVRAY_WASM_IMAGE_PNG_ONLY: only PNG output is supported.
+-    if (type == PNG) { Png::Write(file, image, options); return; }
++    // POVRAY_WASM_RAW_RGBA: emit a raw RGBA8 blob for the Typst plugin instead
++    // of a PNG — [width u32 LE][height u32 LE][rgba8 row-major, top-down].
++    // Typst embeds the pixels directly (image(format: (encoding: "rgba8", ...))),
++    // so we skip the zlib PNG encode here AND the PNG decode in Typst (which
++    // re-compresses for the PDF anyway). Pixels use the identical gamma / dither
++    // / premultiply encoding as the PNG path, so the result is byte-for-byte what
++    // the PNG would have decoded to.
++    if (type == PNG)
++    {
++        const unsigned int w = image->GetWidth();
++        const unsigned int h = image->GetHeight();
++        unsigned char hdr[8] = {
++            (unsigned char)(w),       (unsigned char)(w >> 8),
++            (unsigned char)(w >> 16), (unsigned char)(w >> 24),
++            (unsigned char)(h),       (unsigned char)(h >> 8),
++            (unsigned char)(h >> 16), (unsigned char)(h >> 24),
++        };
++        file->write(hdr, 8);
++        const bool use_alpha = image->HasTransparency() && options.AlphaIsEnabled();
++        GammaCurvePtr gamma = options.GetTranscodingGammaCurve(SRGBGammaCurve::Get());
++        DitherStrategy& dither = *options.ditherStrategy;
++        const bool premul = options.AlphaIsPremultiplied(false);
++        const unsigned int maxValue = 255;
++        for (unsigned int row = 0; row < h; ++row)
++            for (unsigned int col = 0; col < w; ++col)
++            {
++                unsigned int r, g, b, a = maxValue;
++                if (use_alpha)
++                    GetEncodedRGBAValue(image, col, row, gamma, maxValue, r, g, b, a, dither, premul);
++                else
++                    GetEncodedRGBValue(image, col, row, gamma, maxValue, r, g, b, dither);
++                unsigned char px[4] = { (unsigned char)r, (unsigned char)g, (unsigned char)b, (unsigned char)a };
++                file->write(px, 4);
++            }
++        return;
++    }
+     return;
+ #else
+ 
