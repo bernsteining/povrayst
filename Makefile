@@ -131,11 +131,7 @@ CONFIGURE_CACHE_OVERRIDES = \
     ac_cv_lib_boost_thread_exit=yes \
     ac_cv_lib_boost_system_exit=yes \
     ac_cv_lib_boost_date_time_exit=yes \
-    ac_cv_lib_boost_chrono_exit=yes \
-    ac_cv_lib_z_inflate=yes \
-    ac_cv_search_zlibVersion=-lz \
-    ac_cv_search_png_get_libpng_ver=-lpng \
-    ac_cv_lib_png_png_access_version_number=yes
+    ac_cv_lib_boost_chrono_exit=yes
 
 # ---- Stamp files (real file targets) -------------------------------------
 
@@ -302,11 +298,9 @@ $(CONFIGURE_STAMP): $(PREBUILD_STAMP) $(DEPS_STAMP)
 		cross_compiling=yes \
 		--disable-shared --enable-static \
 		--disable-io-restrictions \
-		--without-libsdl --without-libtiff --without-openexr --without-libjpeg \
+		--without-libsdl --without-libtiff --without-openexr --without-libjpeg --without-libpng \
 		--with-boost=$(PREFIX) \
 		--with-boost-thread=boost_thread \
-		--with-zlib=$(PREFIX) \
-		--with-libpng=$(PREFIX) \
 		CXXFLAGS="$(OPT) $(SIMD_FLAGS) -ffast-math -fno-finite-math-only -fno-signed-zeros -fno-exceptions -sDISABLE_EXCEPTION_CATCHING=1 -frtti -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden -DPOVRAY_WASM=1 -DPOV_UINT16=char16_t -DPOVMSUCS2=char16_t -DBOOST_NO_EXCEPTIONS -I$(THREAD_STUB_INC) -I$(PREFIX)/include -include $(CURDIR)/include/no_exceptions.h" \
 		CFLAGS="$(OPT) $(SIMD_FLAGS) -ffast-math -fno-finite-math-only -fno-signed-zeros -fno-exceptions -sDISABLE_EXCEPTION_CATCHING=1 -ffunction-sections -fdata-sections -fvisibility=hidden -DPOVRAY_WASM=1 -DPOV_UINT16=char16_t -DPOVMSUCS2=char16_t -I$(THREAD_STUB_INC) -I$(PREFIX)/include -include $(CURDIR)/include/no_exceptions.h" \
 		LDFLAGS="-fno-exceptions -L$(PREFIX)/lib" \
@@ -455,7 +449,7 @@ $(OUT): $(PLUGIN_OBJ) $(CXA_STUB_OBJ) $(WASM_STUBS_OBJ) $(INVOKE_STUBS_OBJ) $(VF
 		--no-entry \
 		$(PLUGIN_OBJ) $(WASM_STUBS_OBJ) $(INVOKE_STUBS_OBJ) \
 		$(POVRAY_OBJECTS) \
-		-L$(PREFIX)/lib $(BOOST_LIBS) -lpng -lz \
+		-L$(PREFIX)/lib $(BOOST_LIBS) \
 		-o $@
 	@echo ">> stubbing WASI imports"
 	@# Stub all env::* that Typst's host doesn't provide. The list

@@ -48,7 +48,7 @@ log() { printf '\033[1;34m==>\033[0m %s\n' "$*" >&2; }
 
 # ---- zlib ----------------------------------------------------------------
 
-if [[ ! -f "$PREFIX/lib/libz.a" ]]; then
+if false; then # zlib dropped: the plugin emits raw RGBA (no PNG), so nothing uses zlib
     log "building zlib $ZLIB_VERSION (autotools — cmake path can't build SHARED under emscripten)"
     cd "$SCRATCH"
     [[ -d "zlib-$ZLIB_VERSION" ]] || curl -fsSL \
@@ -70,7 +70,7 @@ fi
 
 # ---- libpng --------------------------------------------------------------
 
-if [[ ! -f "$PREFIX/lib/libpng.a" && ! -f "$PREFIX/lib/libpng16.a" ]]; then
+if false; then # libpng dropped: the plugin emits raw RGBA, and image input is stripped
     log "building libpng $LIBPNG_VERSION"
     cd "$SCRATCH"
     [[ -d "libpng-$LIBPNG_VERSION" ]] || curl -fsSL \
