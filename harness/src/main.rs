@@ -51,6 +51,7 @@ struct Cli {
     trace_imports:  bool,
     list_only:      bool,
     no_init:        bool,
+    out:            Option<PathBuf>,
 }
 
 fn parse_cli() -> Result<Cli, String> {
@@ -62,6 +63,7 @@ fn parse_cli() -> Result<Cli, String> {
     let mut trace_imports = false;
     let mut list_only = false;
     let mut no_init = false;
+    let mut out: Option<PathBuf> = None;
 
     let mut i = 0;
     while i < raw.len() {
@@ -84,6 +86,10 @@ fn parse_cli() -> Result<Cli, String> {
             }
             "--trace-imports" => trace_imports = true,
             "--no-init" => no_init = true,
+            "--out" => {
+                i += 1;
+                out = Some(PathBuf::from(raw.get(i).ok_or_else(|| "missing value for --out".to_string())?));
+            }
             other if wasm.is_none() && !other.starts_with('-') => {
                 wasm = Some(PathBuf::from(other));
             }
@@ -100,6 +106,7 @@ fn parse_cli() -> Result<Cli, String> {
         trace_imports,
         list_only,
         no_init,
+        out,
     })
 }
 
@@ -544,6 +551,10 @@ fn main() -> ExitCode {
     match outcome {
         Ok((0, result)) => {
             eprintln!("         return: 0 (success), {} bytes", result.len());
+            if let Some(p) = &cli.out {
+                let _ = std::fs::write(p, &result).map_err(|e| eprintln!("write {}: {e}", p.display()));
+                eprintln!("         wrote {} bytes to {}", result.len(), p.display());
+            }
             // Try to render as UTF-8; fall back to hex-dump of first 64 bytes.
             match std::str::from_utf8(&result) {
                 Ok(s) => println!("{s}"),
