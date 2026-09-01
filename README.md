@@ -7,7 +7,7 @@ Declarative raytracing in Typst
 A [Typst](https://typst.app) plugin that embeds the
 [POV-Ray 3.8](http://www.povray.org) ray-tracer, compiled to
 WebAssembly via [Emscripten](https://emscripten.org). Write a POV-Ray
-scene in your `.typ` document and get a rendered PNG.
+scene in your `.typ` document and get a rendered image.
 
 Feel free to read the [documentation](test/documentation.pdf) to see more examples and options.
 
@@ -15,7 +15,7 @@ Feel free to read the [documentation](test/documentation.pdf) to see more exampl
 ## Usage
 
 ````typst
-#import "@preview/povrayst:0.1.0": pov, render
+#import "@preview/povrayst:0.1.1": pov, render
 #show raw.where(lang: "povray"): pov
 
 ```povray
@@ -42,7 +42,7 @@ covering the full POV-Ray SDL, exposed through the `highlight` show
 rule. Apply it once at the top of your document:
 
 ```typst
-#import "@preview/povrayst:0.1.0": pov, render, highlight
+#import "@preview/povrayst:0.1.1": pov, render, highlight
 #show: highlight
 #show raw.where(lang: "povray"): pov
 ```
@@ -57,8 +57,8 @@ Every keyword argument to `render()` / `pov()`, its default, and the
 POV-Ray option it maps to (verbatim from POV-Ray's `.ini` /
 [command-line reference](https://www.povray.org/documentation/view/3.7.1/219/)).
 Passing `none` suppresses the flag so POV-Ray's own default stays in
-force. The plugin always sets `+FN` (PNG), `-D` (no display), and
-`Work_Threads=1`.
+force. The plugin runs single-threaded (`Work_Threads=1`), with no
+display (`-D`), and returns raw RGBA pixels — so `compression` is moot.
 
 | kwarg | default | POV-Ray option | effect |
 |-------|---------|----------------|--------|
@@ -92,8 +92,8 @@ force. The plugin always sets `+FN` (PNG), `-D` (no display), and
 | `start-column` | `none` | `Start_Column` | pixel-column range |
 | `end-column` | `none` | `End_Column` | |
 | **Output encoding** | | | |
-| `output-alpha` | `false` | `Output_Alpha=on/off` | emit RGBA PNG; use with `background { color rgbt <...,1> }` |
-| `compression` | `none` | `Compression (0–9)` | PNG deflate level, `0` none, `9` max |
+| `output-alpha` | `false` | `Output_Alpha=on/off` | emit an alpha channel; use with `background { color rgbt <...,1> }` |
+| `compression` | `none` | `Compression (0–9)` | ignored — output is raw RGBA, not PNG |
 | **Escape hatch** | | | |
 | `extra` | `()` | raw command strings appended verbatim | any flag from POV-Ray's [`.ini` / CLI reference](https://www.povray.org/documentation/view/3.7.1/219/) |
 
@@ -123,7 +123,7 @@ Gallery render times under native `typst compile` on an AMD Ryzen 9
 - **Single-threaded**: `Work_Threads=1` always. Multi-core
   parallelism isn't possible under wasmi.
 - **One output frame**: animation options are forwarded but only the
-  last PNG is captured.
+  last frame is captured.
 - **Missing include hangs**: if a scene references an `#include` name
   not in the `includes` dict, POV-Ray's `Error()` function is a no-op
   (throw-stripped) so the parser loops forever instead of exiting

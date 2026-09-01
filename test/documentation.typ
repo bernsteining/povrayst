@@ -67,7 +67,7 @@
   #v(0.4em)
   #text(size: 14pt, style: "italic")[Declarative raytracing in Typst.]
   #v(1.2em)
-  #text(size: 10pt)[version 0.1.0  ·  April 2026]
+  #text(size: 10pt)[version 0.1.1  ·  August 2026]
   #v(0.6em)
  #link("https://github.com/bernsteining/povrayst")[#text(size: 10pt, fill: blue)[github.com/bernsteining/povrayst]] · #link("https://typst.app/universe/package/povrayst")[#text(size: 10pt, fill: blue)[typst.app/universe/package/povrayst]]
   #v(3em)
@@ -104,7 +104,7 @@ compile.
 = Caching and iteration
 
 Typst memoises `render()` by its arguments. Identical calls across
-compiles return the cached PNG without re-running the plugin — change
+compiles return the cached image without re-running the plugin — change
 the scene string or any kwarg and it re-renders; otherwise it's free.
 This makes incremental documentation editing very fast.
 
@@ -197,7 +197,13 @@ directly, with no `#pov(...)` wrapper. Useful to keep syntax highlighting and av
 
 #v(0.5cm)
 
-#text(size: 5pt, raw(block: true, lang: "povray", "```povray\n" + scene.text + "\n```"))
+#[
+  // Scoped: the global `raw.where(block: true)` rule forces 9pt, which
+  // would override a plain `#text(size:)`; set it here so this
+  // illustrative block stays small and fits on the page.
+  #show raw.where(block: true): set text(size: 8pt)
+  #raw(block: true, lang: "povray", "```povray\n" + scene.text + "\n```")
+]
 
 = Config reference <config-reference>
 
@@ -278,9 +284,9 @@ for the full semantics of each flag. Also check #link("https://www.povray.org/do
 
   table.cell(colspan: 4, fill: luma(240))[*Output encoding*],
   ..api-row("output-alpha", "false", "Output_Alpha=on/off",
-            [emit RGBA PNG; use with `background { color rgbt <...,1> }`]),
+            [emit an alpha channel; use with `background { color rgbt <...,1> }`]),
   ..api-row("compression",  "none",  "Compression (0–9)",
-            [PNG deflate level, `0` none, `9` max]),
+            [ignored — output is raw RGBA, not PNG]),
 
   table.cell(colspan: 4, fill: luma(240))[*Escape hatch*],
   ..api-row("extra", "()", "raw command strings appended verbatim",
@@ -290,8 +296,8 @@ for the full semantics of each flag. Also check #link("https://www.povray.org/do
 #set text(size: 11pt)
 
 Passing `none` suppresses the flag so POV-Ray's own default stays in
-force. The plugin always sets `+FN` (PNG), `-D` (no display), and
-`Work_Threads=1`.
+force. The plugin runs single-threaded (`Work_Threads=1`), with no
+display (`-D`), and returns raw RGBA pixels — so `compression` is moot.
 
 = Resolution & quality
 
@@ -514,6 +520,11 @@ the rounded interior surfaces.
   caption: [Rounded cube with three orthogonal cylindrical bores — `intersection`, `union`, and `difference` in one object.],
   width: 480, height: 360,
   split-at: 11,
+  // Kept compact so the code and rendered image stay on the same page
+  // as it flows after the short "extra" subsection (no forced pagebreak,
+  // which would leave that page half-empty).
+  code-size: 7pt,
+  image-width: 52%,
   output-alpha: true)
 
 #pagebreak(weak: true)
@@ -735,4 +746,40 @@ The Gyroid takes longer because I tweaked it to look stylized/beautiful (clipped
 
 = Conclusion
 
-POV-Ray has a lot of features, too many to show all of them here. Feel free to read its documentation to learn about its possibilities and look for examples online. Many wikipedia pages (in algebraic geometry, topology, and so on) use POV-Ray to visualize all sorts of things: https://commons.wikimedia.org/wiki/Category:POV-Ray 
+POV-Ray has a lot of features, too many to show all of them here. Feel free to read its documentation to learn about its possibilities and look for examples online. Many wikipedia pages (in algebraic geometry, topology, and so on) use POV-Ray to visualize all sorts of things: https://commons.wikimedia.org/wiki/Category:POV-Ray
+
+#pagebreak(weak: true)
+
+// ---- Appendix: switch to letter-numbered headings --------------------
+#counter(heading).update(0)
+#set heading(numbering: "A.1")
+
+= Appendix
+
+== Changelog <changelog>
+
+Release dates are the date the version's git tag was published on
+#link("https://github.com/bernsteining/povrayst")[GitHub].
+
+#let release(version, date, body) = {
+  block(above: 1em, below: 0.6em)[
+    #text(weight: "bold", size: 12pt)[#version]
+    #h(0.6em)
+    #text(fill: luma(110), style: "italic")[#date]
+  ]
+  body
+}
+
+#release("0.1.1", "2026-08-31")[
+  - *Raw RGBA output.* The plugin now returns raw RGBA8 pixels instead of
+    encoding a PNG; Typst embeds them directly, skipping a PNG encode in
+    the plugin and a PNG decode on the Typst side. Same pixels, less work.
+  - *Smaller WebAssembly.* With PNG output gone, `libpng` and `zlib` are
+    no longer compiled into the binary.
+]
+
+#release("0.1.0", "2026-06-02")[
+  - First public release: POV-Ray 3.8 wrapped as a Typst WebAssembly
+    plugin, with the `render()` / `pov()` API, Typst-side `#include`
+    expansion, POV-Ray syntax highlighting, and this documentation.
+]

@@ -1,0 +1,170 @@
+name: Build WASM
+
+# Builds pkg/povray.wasm inside the pinned toolchain image described by the
+# repo Dockerfile (emsdk 5.0.5, binaryen 128, wasi-stub 0.3.0, boost 1.87.0).
+# Because the Dockerfile pins every tool and the Makefile / build-deps.sh use
+# -ffile-prefix-map to strip host paths, the wasm produced here should be
+# byte-for-byte identical to a local `make wasm` run in the same image.
+
+# Documentation-only changes must NOT trigger this build — it compiles the
+# whole WASM (~7 min of CI) and none of these files affect the binary. The
+# paths-ignore list below skips pushes/PRs that touch only docs, the Typst
+# wrapper/manifest, syntax files, etc. Source/build changes (Makefile,
+# Dockerfile, src/**, patches/**, scripts/**, povray-src) still build, as do
+# version tags and manual `workflow_dispatch` runs. To build after a docs-only
+# change anyway, use the "Run workflow" button (workflow_dispatch).
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: &docs-ignore
+      - '**.md'
+      - 'test/**'
+      - 'pkg/**.typ'
+      - 'pkg/typst.toml'
+      - 'pkg/**.sublime-syntax'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    paths-ignore: *docs-ignore
+  workflow_dispatch:
+    inputs:
+      verify_reproducibility:
+        description: 'Also build a second time from clean and diff the hashes'
+        type: boolean
+        default: false
+
+# One build per ref; cancel superseded runs (except tags, which we keep).
+concurrency:
+  group: build-wasm-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+# The release step (softprops/action-gh-release on tags) creates/updates a
+# GitHub Release, which needs write access to repository contents. The default
+# GITHUB_TOKEN is read-only, so grant it explicitly.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with POV-Ray submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build the toolchain image. Layers are cached in the GitHub Actions
+      # cache, so the emsdk/binaryen/wasi-stub downloads only re-run when the
+      # Dockerfile changes.
+      - name: Build toolchain image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: povrayst-build:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Full pipeline: deps (boost) -> patch -> configure -> compile POV-Ray
+      # -> link -> wasi-stub -> wasm-opt. Runs as root inside the container;
+      # host paths never reach the wasm, so ownership/uid don't affect output.
+      - name: Build povray.wasm
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            povrayst-build:ci \
+            make -j"$(nproc)" wasm
+
+      # The container writes as root; hand the tree back to the runner user so
+      # later steps (hashing, artifact upload) can read it.
+      - name: Normalize ownership
+        run: sudo chown -R "$(id -u):$(id -g)" .
+
+      - name: Hash the artifact
+        run: |
+          sha256sum pkg/povray.wasm | tee pkg/povray.wasm.sha256
+          {
+            echo '### `pkg/povray.wasm`'
+            echo
+            echo '```'
+            sha256sum pkg/povray.wasm
+            ls -l pkg/povray.wasm | awk '{print $5 " bytes"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: povray-wasm
+          path: |
+            pkg/povray.wasm
+            pkg/povray.wasm.sha256
+          if-no-files-found: error
+
+      # On a version tag, attach the wasm to a GitHub Release.
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            pkg/povray.wasm
+            pkg/povray.wasm.sha256
+
+  # On-demand determinism check: build twice from clean in one runner and
+  # confirm the two wasm hashes match. Only runs when the workflow_dispatch
+  # box is ticked, since it pays the (long) POV-Ray compile twice.
+  reproducibility:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_reproducibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with POV-Ray submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build toolchain image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: povrayst-build:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: First build
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/workspace" \
+            povrayst-build:ci make -j"$(nproc)" wasm
+          sudo chown -R "$(id -u):$(id -g)" .
+          sha256sum pkg/povray.wasm | awk '{print $1}' > /tmp/hash1
+          cp pkg/povray.wasm /tmp/build1.wasm
+
+      - name: Clean and rebuild
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/workspace" \
+            povrayst-build:ci make distclean
+          docker run --rm -v "${{ github.workspace }}:/workspace" \
+            povrayst-build:ci git submodule update --init povray-src
+          docker run --rm -v "${{ github.workspace }}:/workspace" \
+            povrayst-build:ci make -j"$(nproc)" wasm
+          sudo chown -R "$(id -u):$(id -g)" .
+          sha256sum pkg/povray.wasm | awk '{print $1}' > /tmp/hash2
+
+      - name: Compare
+        run: |
+          h1="$(cat /tmp/hash1)"; h2="$(cat /tmp/hash2)"
+          echo "build 1: $h1"
+          echo "build 2: $h2"
+          if [ "$h1" = "$h2" ]; then
+            echo "✅ reproducible: identical wasm from two clean builds" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ NOT reproducible: hashes differ" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

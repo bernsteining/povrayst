@@ -128,7 +128,7 @@
   ).join("\n")
 }
 
-/// Render a POV-Ray scene to a PNG image.
+/// Render a POV-Ray scene to an image.
 ///
 /// The scene is POV-Ray source (SDL) — exactly what you'd write in a
 /// `.pov` file. The plugin parses from an in-memory buffer, so there is
@@ -140,7 +140,8 @@
 /// them keeps POV-Ray's default behavior for that setting (what the
 /// docs call "no command-line override").
 ///
-/// Returns a Typst `image` of the rendered PNG.
+/// Returns a Typst `image` of the rendered pixels (raw RGBA8 — see the
+/// note on the plugin's return value at the bottom of this function).
 #let render(
   scene,
 
@@ -222,12 +223,14 @@
   end-column: none,
 
   // ---- output encoding ------------------------------------------------
-  // Write a full RGBA PNG with an alpha channel. Requires the scene to
+  // Compute a real alpha channel for the image. Requires the scene to
   // produce transparent pixels — use `background { color rgbt <r,g,b,1> }`
   // where `t=1` means fully transparent. Without this, the background
   // is opaque black regardless of the transmit value.
   output-alpha: false,
-  // PNG compression level, 0 (no compression) .. 9 (max).
+  // Legacy PNG deflate level (0..9). The plugin now returns raw,
+  // uncompressed RGBA pixels instead of a PNG, so this no longer affects
+  // the output; kept only so 0.1.0 call sites don't break.
   compression: none,
 
   // ---- escape hatch ---------------------------------------------------
@@ -290,7 +293,7 @@
 ///
 /// Apply as a show rule once at the top of your document:
 ///
-///   #import "@preview/povrayst:0.1.0": pov, render, highlight
+///   #import "@preview/povrayst:0.1.1": pov, render, highlight
 ///   #show: highlight
 ///
 /// The syntax file shipped inside the package is loaded automatically —

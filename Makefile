@@ -225,7 +225,7 @@ help:
 	@echo "  make smoke        - plugin-glue-only wasm (no POV-Ray linkage)"
 	@echo "  make wasm         - full incremental build (default)"
 	@echo "  make dev          - -O0 build into build/dev/"
-	@echo "  make install      - copy pkg/* into ~/.local/share/typst/packages/local/povrayst/0.1.0"
+	@echo "  make install      - copy pkg/* into ~/.local/share/typst/packages/local/povrayst/0.1.1"
 	@echo ""
 	@echo "Debugging:"
 	@echo "  make harness      - build the wasmi-based Rust harness (harness/)"
@@ -298,7 +298,7 @@ $(CONFIGURE_STAMP): $(PREBUILD_STAMP) $(DEPS_STAMP)
 		cross_compiling=yes \
 		--disable-shared --enable-static \
 		--disable-io-restrictions \
-		--without-libsdl --without-libtiff --without-openexr --without-libjpeg --without-libpng \
+		--without-libsdl --without-libtiff --without-openexr --without-libjpeg --without-libpng --without-zlib \
 		--with-boost=$(PREFIX) \
 		--with-boost-thread=boost_thread \
 		CXXFLAGS="$(OPT) $(SIMD_FLAGS) -ffast-math -fno-finite-math-only -fno-signed-zeros -fno-exceptions -sDISABLE_EXCEPTION_CATCHING=1 -frtti -ffunction-sections -fdata-sections -fvisibility=hidden -fvisibility-inlines-hidden -DPOVRAY_WASM=1 -DPOV_UINT16=char16_t -DPOVMSUCS2=char16_t -DBOOST_NO_EXCEPTIONS -I$(THREAD_STUB_INC) -I$(PREFIX)/include -include $(CURDIR)/include/no_exceptions.h" \
@@ -519,9 +519,9 @@ harness-render: $(OUT) $(HARNESS_BIN)
 # ---- Install ------------------------------------------------------------
 
 install: $(OUT)
-	mkdir -p ~/.local/share/typst/packages/local/povrayst/0.1.0
+	mkdir -p ~/.local/share/typst/packages/local/povrayst/0.1.1
 	cp pkg/povray.wasm pkg/povray.typ pkg/typst.toml \
-		~/.local/share/typst/packages/local/povrayst/0.1.0/
+		~/.local/share/typst/packages/local/povrayst/0.1.1/
 
 # ---- Housekeeping -------------------------------------------------------
 

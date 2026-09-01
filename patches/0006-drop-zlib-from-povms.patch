@@ -1,0 +1,28 @@
+--- a/source/povms/povmscpp.cpp
++++ b/source/povms/povmscpp.cpp
+@@ -36,7 +36,9 @@
+ #include <cstdlib>
+ #include <cstring>
+ 
++#ifndef POVRAY_WASM
+ #include <zlib.h>
++#endif
+ 
+ #include "povmscpp.h"
+ 
+@@ -1370,6 +1372,7 @@
+                 if(POVMSStream_Read(&data, objectstream, &objectsize) == 0)
+                     (void)0; /* WASM_THROW_STRIPPED */
+             }
++#ifndef POVRAY_WASM
+             else if(encoding == kPOVMSGZipStreamEncoding)
+             {
+                 int compressedsize = objectsize;
+@@ -1398,6 +1401,7 @@
+                 if(POVMSStream_Read(&data, objectstream, &objectsize) == 0)
+                     (void)0; /* WASM_THROW_STRIPPED */
+             }
++#endif
+             else
+                 (void)0; /* WASM_THROW_STRIPPED */
+         }
